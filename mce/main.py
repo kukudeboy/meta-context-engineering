@@ -28,6 +28,8 @@ from mce.llm_client import LLMClient
 from env.registry import EnvironmentRegistry
 from dotenv import load_dotenv
 
+from mce.tracker import global_tracker, TokenLimitExceededError
+
 load_dotenv(override=True)
 
 
@@ -450,6 +452,12 @@ async def main():
         help="Skip meta-agent entirely (no skills will be used). "
              "This is mutually exclusive with --skill-path"
     )
+    parser.add_argument(
+        "--token-limit",
+        type=int,
+        default=None,
+        help="全局 Token 消耗上限。达到后程序将优雅退出（默认：不限制）"
+    )
     
     args = parser.parse_args()
     
@@ -511,6 +519,11 @@ async def main():
     else:
         logger.info(f"  Meta-agent: ENABLED")
 
+    # 设置全局 Token 限制
+    if args.token_limit is not None:
+        global_tracker.set_limit(args.token_limit)
+        logger.info(f"💰 全局 Token 限制已设置为: {args.token_limit:,}")
+
     # Setup meta-agent reference data (copy training data once at the beginning)
     if args.train_data:
         setup_meta_agent_reference(workspace_base, args.train_data, args.train_limit, logger)
@@ -551,6 +564,14 @@ async def main():
                 no_meta_agent=args.no_meta_agent,
             )
             results.append(result)
+            
+    except TokenLimitExceededError as e:
+        logger.warning(f"\n{'='*60}")
+        logger.warning(f"🛑 提前终止: {e}")
+        logger.warning(f"累计 Token: {global_tracker.total_tokens:,}")
+        logger.warning(f"由于达到了成本预算，程序正在优雅退出。已经保存了完成轮次的数据。")
+        logger.warning(f"{'='*60}\n")
+        
     finally:
         # Cleanup E2B sandbox
         if e2b_sandbox_manager:
@@ -559,6 +580,7 @@ async def main():
     
     # Print summary
     logger.info("\n🎯 FINAL SUMMARY")
+    logger.info(f"累计 Token: {global_tracker.total_tokens:,}")
     logger.info(f"Completed {len(results)} iteration(s):")
     
     total_rollouts = 0

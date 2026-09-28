@@ -17,6 +17,7 @@ from functools import partial
 from mce.logging_utils import log_message, setup_logger
 from mce.prompts.meta_agent import build_meta_agent_prompt
 from mce.utils import cleanup_irrelevant_files
+from mce.tracker import global_tracker
 
 from dotenv import load_dotenv
 
@@ -261,6 +262,8 @@ async def run_meta_agent(
             message_count = 0
             async for message in client.receive_response():
                 message_count += 1
+                if getattr(message, "usage", None):
+                    global_tracker.add_usage(message.usage)
                 log_message(message, logger, minimal_console=True)
             
             logger.info(f"Meta-agent completed with {message_count} messages")

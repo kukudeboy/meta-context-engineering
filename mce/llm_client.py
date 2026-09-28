@@ -6,6 +6,9 @@ from typing import Optional, Dict, Any, Callable, List, Union
 from httpx._transports import default
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+
+from mce.tracker import global_tracker, TokenLimitExceededError
+
 load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,13 @@ class LLMClient:
             extra_body["provider"] = self.provider_config
         
         for attempt in range(self.max_retries):
+            # 发请求前检查余额
+            if global_tracker.is_exceeded():
+                raise TokenLimitExceededError(
+                    f"Token预算已耗尽！已使用 {global_tracker.total_tokens}，"
+                    f"限制为 {global_tracker.max_limit}"
+                )
+
             try:
                 # Wrap API call with timeout
                 response = await asyncio.wait_for(
@@ -87,6 +97,10 @@ class LLMClient:
                     ),
                     timeout=self.timeout
                 )
+                
+                # 累加 token 消耗
+                if response.usage:
+                    global_tracker.add(response.usage.total_tokens)
                 
                 text = response.choices[0].message.content
                 
@@ -100,6 +114,9 @@ class LLMClient:
                     await asyncio.sleep(10)
                     continue
                 logger.error(f"All {self.max_retries} attempts timed out")
+                raise
+
+            except TokenLimitExceededError:
                 raise
             
             except Exception as e:

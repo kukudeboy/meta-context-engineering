@@ -24,6 +24,7 @@ from mce.logging_utils import setup_logger, log_message
 from mce.prompts.base_agent import build_base_agent_prompt
 from mce.utils import cleanup_irrelevant_files
 from mce.validation import validate_interfaces, format_validation_feedback, ValidationResult
+from mce.tracker import global_tracker
 
 from env.base import InterfaceSignature
 
@@ -204,6 +205,8 @@ async def run_base_agent(
             message_count = 0
             async for message in client.receive_response():
                 message_count += 1
+                if getattr(message, "usage", None):
+                    global_tracker.add_usage(message.usage)
                 log_message(message, logger, minimal_console=(run_dir is not None))
             
             logger.info(f"Agent completed with {message_count} messages")
@@ -223,6 +226,8 @@ async def run_base_agent(
             message_count = 0
             async for message in client.receive_response():
                 message_count += 1
+                if getattr(message, "usage", None):
+                    global_tracker.add_usage(message.usage)
                 log_message(message, logger, minimal_console=(run_dir is not None))
             
             logger.info(f"Agent completed with {message_count} messages")
