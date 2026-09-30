@@ -143,6 +143,21 @@ def _validate_single_interface(
     except Exception as e:
         return {"error": f"Import failed: {e}", "function": None}
     
+    # 6. Smoke test: actually call the function with dummy args
+    try:
+        dummy_args = _build_dummy_args(sig)
+        func(*dummy_args)
+    except (TypeError, KeyError, AttributeError, NameError, IndexError, FileNotFoundError) as e:
+        import traceback
+        tb = traceback.format_exc()
+        return {
+            "error": f"Runtime smoke test failed for '{sig.name}': {type(e).__name__}: {e}\n\nTraceback:\n{tb}",
+            "function": None
+        }
+    except Exception:
+        # Other exceptions (API errors, network, etc.) are OK - the function at least runs
+        pass
+
     return {"error": None, "function": func}
 
 
@@ -184,6 +199,32 @@ def _import_function(file_path: Path, func_name: str) -> Callable:
         raise ImportError(f"Module does not have function '{func_name}'")
     
     return getattr(module, func_name)
+
+
+def _build_dummy_args(sig: InterfaceSignature) -> list:
+    """
+    Build dummy arguments for smoke-testing an interface function.
+    
+    Maps type hints to safe default values.
+    """
+    type_defaults = {
+        "str": "test input",
+        "int": 0,
+        "float": 0.0,
+        "bool": False,
+        "list": [],
+        "dict": {},
+        "List[str]": ["test"],
+        "List[int]": [0],
+        "Dict[str, str]": {"key": "value"},
+        "Dict[str, Any]": {"key": "value"},
+        "Optional[str]": None,
+        "Optional[int]": None,
+    }
+    args = []
+    for _, type_hint, _ in sig.inputs:
+        args.append(type_defaults.get(type_hint, "test input"))
+    return args
 
 
 def load_interfaces_from_init(iter_dir: Path) -> Dict[str, Callable]:
@@ -261,12 +302,17 @@ def format_validation_feedback(result: ValidationResult) -> str:
     
     lines.extend([
         "",
-        "Remember:",
-        "- Each interface must be in `interfaces/{name}.py`",
-        "- Function name must match exactly",
-        "- Parameter names must match the signature",
-        "- Function must have a return statement",
-        "- Export functions in `interfaces/__init__.py`",
+        "⚠️ STRICT INSTRUCTIONS - YOU MUST FOLLOW EXACTLY:",
+        "1. Read the error messages above CAREFULLY.",
+        "2. Fix ONLY the issues mentioned - do not change anything else.",
+        "3. If there is a runtime error (Traceback), fix the exact line that caused it.",
+        "4. Use the Write tool to output the COMPLETE corrected Python file.",
+        "5. Do NOT output explanations or markdown - ONLY write the corrected code file.",
+        "6. Each interface MUST be in `interfaces/{name}.py` with matching function name.",
+        "7. Parameter names MUST match the signature exactly.",
+        "8. Function MUST have a return statement that returns a value.",
+        "9. Export all functions in `interfaces/__init__.py`.",
+        "10. Use ABSOLUTE paths for any file access (e.g., context files).",
     ])
     
     return "\n".join(lines)

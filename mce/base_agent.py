@@ -1,5 +1,5 @@
 """
-Base-agent implementation using Claude Agent SDK.
+Base-agent implementation using the OpenAI-compatible tool-calling agent (mce.agent).
 
 The base-agent learns task-specific context from training data using skills
 provided by the meta-agent. It implements interfaces defined by InterfaceSignatures.
@@ -7,6 +7,7 @@ provided by the meta-agent. It implements interfaces defined by InterfaceSignatu
 Key features:
 - Multi-turn validation loop: agent runs, system validates, feeds errors back
 - Signature-driven: validates against InterfaceSignature definitions
+- Sandbox: may read/write only inside its iteration directory (utils/ is read-only)
 """
 
 import os
@@ -14,13 +15,9 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from functools import partial
-from claude_agent_sdk import (
-    ClaudeSDKClient,
-    ClaudeAgentOptions
-)
 
-from mce.logging_utils import setup_logger, log_message
+from mce.agent import ToolAgent, Sandbox
+from mce.logging_utils import setup_logger
 from mce.prompts.base_agent import build_base_agent_prompt
 from mce.utils import cleanup_irrelevant_files
 from mce.validation import validate_interfaces, format_validation_feedback, ValidationResult
@@ -31,71 +28,23 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 
-async def base_agent_permission_handler(
-    tool_name: str,
-    input_data: dict,
-    context: dict,
-    iter_dir: Path,
-):
-    """
-    Permission handler for base-agent to restrict operations.
-    
-    Ensures the agent:
-    1. Only uses allowed tools
-    2. Can only read/write files within its iteration directory
-    """
-    allowed_tools = [
-        "Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep", 
-        "Task", "TaskOutput", "ExitPlanMode", "TodoWrite", "KillShell", "EnterPlanMode"
-    ]
-    
-    if tool_name not in allowed_tools:
-        return {
-            "behavior": "deny",
-            "message": f"Tool '{tool_name}' not allowed. Allowed: {', '.join(allowed_tools)}",
-            "interrupt": False
-        }
-    
-    iter_dir = iter_dir.resolve()
-    
-    # Tools that involve file paths
-    file_tools = ["Read", "Write", "Edit", "Glob", "Grep"]
+def build_base_agent_sandbox(iter_dir: Path) -> Sandbox:
+    """Base-agent may read/write only within iter_dir, and never write to utils/."""
+    iter_dir = Path(iter_dir).resolve()
+    return Sandbox(
+        cwd=iter_dir,
+        read_roots=[iter_dir],
+        write_roots=[iter_dir],
+        write_deny=[iter_dir / "utils"],
+    )
 
-    if tool_name in file_tools:
-        file_path = input_data.get("file_path") or input_data.get("path")
-        if file_path:
-            # Resolve the absolute path (relative to iter_dir since that's the cwd)
-            if not Path(file_path).is_absolute():
-                resolved_path = (iter_dir / file_path).resolve()
-            else:
-                resolved_path = Path(file_path).resolve()
-            
-            # All file operations restricted to iter_dir only
-            try:
-                resolved_path.relative_to(iter_dir)
-            except ValueError:
-                return {
-                    "behavior": "deny",
-                    "message": f"Access denied: restricted to {iter_dir}",
-                    "interrupt": True
-                }
-            
-            # Prevent writing to utils/
-            if tool_name in ["Write", "Edit"]:
-                try:
-                    utils_dir = (iter_dir / "utils").resolve()
-                    resolved_path.relative_to(utils_dir)
-                    return {
-                        "behavior": "deny",
-                        "message": "Access denied: cannot write to utils/",
-                        "interrupt": True
-                    }
-                except ValueError:
-                    pass
-            
-            return {"behavior": "allow", "updatedInput": input_data}
-    
-    return {"behavior": "allow", "updatedInput": input_data}
+
+def get_base_agent_tools() -> List[str]:
+    """Tools exposed to the base-agent. Bash can be disabled via MCE_AGENT_ENABLE_BASH=0."""
+    tools = ["Read", "Write", "Glob"]
+    if os.getenv("MCE_AGENT_ENABLE_BASH", "1").lower() not in ("0", "false", "no"):
+        tools.append("Bash")
+    return tools
 
 
 async def run_base_agent(
@@ -108,7 +57,7 @@ async def run_base_agent(
     iteration: int = None,
     e2b_sandbox_manager = None,
     initial_prompt: str = None,
-    max_validation_attempts: int = 3,
+    max_validation_attempts: int = None,
 ) -> Dict[str, Any]:
     """
     Run base-agent with multi-turn validation loop.
@@ -133,6 +82,9 @@ async def run_base_agent(
     iter_dir_name = Path(iter_dir).name
     if "_sub" in iter_dir_name:
         sub_iteration = int(iter_dir_name.split("_sub")[1])
+
+    if max_validation_attempts is None:
+        max_validation_attempts = int(os.getenv("MCE_MAX_VALIDATION_ATTEMPTS", "5"))
 
     # Set up iteration-specific logger
     if run_dir and iteration is not None:
@@ -181,80 +133,79 @@ async def run_base_agent(
         )
     
     # Local execution with validation loop
-    allowed_tools = [
-        "Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-        "Task", "TaskOutput", "ExitPlanMode", "TodoWrite", "KillShell", "EnterPlanMode"
-    ]
-    
-    options = ClaudeAgentOptions(
-        cwd=str(iter_dir),
-        setting_sources=["project"],
-        allowed_tools=allowed_tools,
-        can_use_tool=partial(base_agent_permission_handler, iter_dir=iter_dir)
+    # The SDK auto-loaded project skills; inline SKILL.md so small models see it without an extra Read
+    skill_path = Path(iter_dir) / ".claude" / "skills" / "learning-context" / "SKILL.md"
+    if skill_path.exists():
+        full_prompt += (
+            "\n\n## SKILL.md Content\n\n"
+            f"Below is the content of `{skill_path}` (no need to Read it again):\n\n"
+            f"{skill_path.read_text(encoding='utf-8')}"
+        )
+
+    agent = ToolAgent(
+        sandbox=build_base_agent_sandbox(iter_dir),
+        tools=get_base_agent_tools(),
+        logger=logger,
+        console_prefix=f"  [base iter{iteration}]" if iteration is not None else "  [base]",
     )
-    
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(full_prompt)
-        
-        # If no interface signatures, skip validation loop
-        if not interface_signatures:
-            logger.info("No interface signatures required - skipping validation")
-            
-            # Just collect agent response
-            message_count = 0
-            async for message in client.receive_response():
-                message_count += 1
-                log_message(message, logger, minimal_console=(run_dir is not None))
-            
-            logger.info(f"Agent completed with {message_count} messages")
+
+    # If no interface signatures, skip validation loop
+    if not interface_signatures:
+        logger.info("No interface signatures required - skipping validation")
+        agent_result = await agent.query(full_prompt)
+        logger.info(
+            f"Agent completed with {agent_result.message_count} messages, "
+            f"{agent_result.tool_calls} tool calls ({agent_result.stopped_reason})"
+        )
+        cleanup_irrelevant_files(iter_dir, agent_type="base", logger=logger)
+        return {
+            'success': True,
+            'interfaces': {},
+            'message_count': agent_result.message_count,
+            'validation_attempts': 0,
+        }
+
+    # Validation loop for environments with interfaces
+    validation_result: Optional[ValidationResult] = None
+    message_count = 0
+    next_prompt = full_prompt
+    for attempt in range(max_validation_attempts):
+        logger.info(f"\n--- Validation attempt {attempt + 1}/{max_validation_attempts} ---")
+
+        agent_result = await agent.query(next_prompt)
+        message_count = agent_result.message_count
+        logger.info(
+            f"Agent completed with {message_count} messages, "
+            f"{agent_result.tool_calls} tool calls ({agent_result.stopped_reason})"
+        )
+
+        # Validate interfaces
+        validation_result = validate_interfaces(iter_dir, interface_signatures)
+
+        if validation_result.success:
+            logger.info(f"✅ All {len(interface_signatures)} interfaces validated successfully")
             cleanup_irrelevant_files(iter_dir, agent_type="base", logger=logger)
             return {
                 'success': True,
-                'interfaces': {},
+                'interfaces': validation_result.interfaces,
                 'message_count': message_count,
-                'validation_attempts': 0,
+                'validation_attempts': attempt + 1,
             }
-        
-        # Validation loop for environments with interfaces
-        for attempt in range(max_validation_attempts):
-            logger.info(f"\n--- Validation attempt {attempt + 1}/{max_validation_attempts} ---")
-            
-            # Collect agent response
-            message_count = 0
-            async for message in client.receive_response():
-                message_count += 1
-                log_message(message, logger, minimal_console=(run_dir is not None))
-            
-            logger.info(f"Agent completed with {message_count} messages")
-            
-            # Validate interfaces
-            validation_result = validate_interfaces(iter_dir, interface_signatures)
-            
-            if validation_result.success:
-                logger.info(f"✅ All {len(interface_signatures)} interfaces validated successfully")
-                cleanup_irrelevant_files(iter_dir, agent_type="base", logger=logger)
-                return {
-                    'success': True,
-                    'interfaces': validation_result.interfaces,
-                    'message_count': message_count,
-                    'validation_attempts': attempt + 1,
-                }
-            
-            # Log validation errors
-            logger.warning(f"❌ Validation failed with {len(validation_result.errors)} errors:")
-            for error in validation_result.errors:
-                logger.warning(f"  - {error}")
-            
-            # Check if we have more attempts
-            if attempt + 1 >= max_validation_attempts:
-                logger.error(f"Max validation attempts ({max_validation_attempts}) exceeded")
-                break
-            
-            # Feed errors back to agent for continuation
-            feedback = format_validation_feedback(validation_result)
-            logger.info(f"📤 Sending validation feedback to agent...")
-            await client.query(feedback)
-    
+
+        # Log validation errors
+        logger.warning(f"❌ Validation failed with {len(validation_result.errors)} errors:")
+        for error in validation_result.errors:
+            logger.warning(f"  - {error}")
+
+        # Check if we have more attempts
+        if attempt + 1 >= max_validation_attempts:
+            logger.error(f"Max validation attempts ({max_validation_attempts}) exceeded")
+            break
+
+        # Feed errors back to agent for continuation
+        next_prompt = format_validation_feedback(validation_result)
+        logger.info(f"📤 Sending validation feedback to agent...")
+
     # Validation failed after all attempts
     cleanup_irrelevant_files(iter_dir, agent_type="base", logger=logger)
     return {
@@ -275,11 +226,8 @@ async def _run_in_e2b(
     """Run agent in E2B sandbox."""
     raise NotImplementedError("E2B sandbox execution is not implemented yet")
 
-    allowed_tools = [
-        "Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-        "Task", "TaskOutput", "ExitPlanMode", "TodoWrite", "KillShell", "EnterPlanMode"
-    ]
-    
+    allowed_tools = get_base_agent_tools()
+
     logger.info("🔒 Running agent in E2B sandbox")
     try:
         result = await e2b_sandbox_manager.run_agent(

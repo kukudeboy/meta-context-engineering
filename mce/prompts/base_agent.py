@@ -176,7 +176,14 @@ If validation fails, you'll receive specific error messages to fix.
 Just keep working until all interfaces are valid.
 '''
     
-    prompt += '''
+    prompt += '''## Tool Usage Guidelines
+
+**IMPORTANT**: When creating or modifying files:
+- **ALWAYS use the `Write` tool** to create complete files. Do NOT use the `Edit` tool.
+- Write the ENTIRE file content at once - do not try to do partial string-match edits.
+- If you need to modify an existing file, read it first, then Write the complete updated version.
+- For `Bash` tool: use simple commands only (cat, echo, ls, grep). Avoid complex pipelines.
+
 Work efficiently: focus on impactful changes, avoid over-analysis, finish promptly.
 '''
     

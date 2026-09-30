@@ -96,9 +96,11 @@ IMPORTANT: In your interface implementation, use ABSOLUTE paths to access contex
                     "output": narrowing_context,
                 })
             except Exception as e:
-                logger.warning(f"get_narrowing_context error: {e}")
+                import traceback
+                tb = traceback.format_exc()
+                logger.error(f"get_narrowing_context error: {e}\n{tb}")
                 narrowing_context = ""
-                trajectory.append({"step": "get_narrowing_context", "error": str(e)})
+                trajectory.append({"step": "get_narrowing_context", "error": str(e), "traceback": tb})
         else:
             narrowing_context = ""
             print(f"[Context] Stage1: No interface, using empty", flush=True)
@@ -135,9 +137,11 @@ IMPORTANT: In your interface implementation, use ABSOLUTE paths to access contex
                     "output": diagnosis_context,
                 })
             except Exception as e:
-                logger.warning(f"get_diagnosis_context error: {e}")
+                import traceback
+                tb = traceback.format_exc()
+                logger.error(f"get_diagnosis_context error: {e}\n{tb}")
                 diagnosis_context = ""
-                trajectory.append({"step": "get_diagnosis_context", "error": str(e)})
+                trajectory.append({"step": "get_diagnosis_context", "error": str(e), "traceback": tb})
         else:
             diagnosis_context = ""
             print(f"[Context] Stage2: No interface, using empty", flush=True)

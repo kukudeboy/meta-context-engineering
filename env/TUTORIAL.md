@@ -350,7 +350,7 @@ uv run python -m mce.main \
     --env "my_task" \
     --train-data "env/my_task/data/train.jsonl" \
     --val-data "env/my_task/data/val.jsonl" \
-    --model "deepseek/deepseek-chat-v3.1" \
+    --model "qwen3.7-flash" \
     --iterations 3 \
     --train-limit 50 \
     --val-limit 20 \
@@ -422,7 +422,7 @@ from mce.llm_client import LLMClient
 
 async def main():
     env = EnvironmentRegistry.get("my_task")
-    llm = LLMClient(model="deepseek/deepseek-chat-v3.1")
+    llm = LLMClient(model="qwen3.7-flash")
     
     samples = env.load_samples("env/my_task/data/val.jsonl", limit=3)
     print(f"Loaded {len(samples)} samples")

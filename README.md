@@ -88,30 +88,34 @@ Copy `.env.template` to `.env` and set your API keys:
 cp .env.template .env
 ```
 
-The system uses **OpenRouter** by default with automatic fallback to **OpenAI**:
+All components (inference, meta-agent, base-agent, embeddings) talk to a single **OpenAI-compatible** endpoint.
+The agents use native OpenAI tool calling (`mce/agent.py`), so no Anthropic API is required.
 
 ```bash
-# Option 1: OpenRouter (recommended)
-export OPENROUTER_API_KEY="your-api-key"
-export OPENROUTER_API_BASE="https://openrouter.ai/api/v1"
+# Alibaba Cloud Bailian (default)
+export DASHSCOPE_API_KEY="your-bailian-api-key"
+export DASHSCOPE_API_BASE="https://dashscope.aliyuncs.com/compatible-mode/v1"  # Optional
+export MCE_MODEL="qwen3.7-flash"
 
-# Option 2: OpenAI (fallback if OpenRouter not set)
-export OPENAI_API_KEY="your-api-key"
-export OPENAI_API_BASE="https://api.openai.com/v1"  # Optional
-
-# To use Claude agent SDK
-export ANTHROPIC_API_KEY="your-anthropic-api-key"
-
-# If you are using OpenRouter
-export ANTHROPIC_BASE_URL=https://openrouter.ai/api
-export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"
-export ANTHROPIC_API_KEY=""
-
-# Set default models for Claude agent SDK
-export ANTHROPIC_DEFAULT_SONNET_MODEL=
-export ANTHROPIC_DEFAULT_OPUS_MODEL=
-export ANTHROPIC_DEFAULT_HAIKU_MODEL=
+# ...or a local vLLM server
+export DASHSCOPE_API_KEY="EMPTY"
+export DASHSCOPE_API_BASE="http://localhost:8000/v1"
+export MCE_MODEL="llama31-8b"
 ```
+
+### Local models (vLLM)
+
+The agents require server-side tool calling. For Llama-3.1-8B-Instruct:
+
+```bash
+vllm serve /path/to/Meta-Llama-3.1-8B-Instruct \
+  --served-model-name llama31-8b \
+  --max-model-len 32768 \
+  --enable-auto-tool-choice --tool-call-parser llama3_json
+```
+
+Keep `MCE_AGENT_MAX_CONTEXT_TOKENS + MCE_AGENT_MAX_TOKENS` below `--max-model-len`
+(see `.env.template` for all `MCE_AGENT_*` settings).
 
 ## Quick Start
 
@@ -160,7 +164,7 @@ uv run python -m mce.main \
     --env "my_task"                        # Environment name
     --train-data "path/to/train.jsonl"    # Training data
     --val-data "path/to/val.jsonl"        # Validation data
-    --model "deepseek/deepseek-chat-v3.1" # Inference LLM
+    --model "qwen3.7-flash" # Inference LLM
     --iterations 3                         # Meta-iterations
     --train-limit 50                       # Training samples
     --val-limit 20                         # Validation samples

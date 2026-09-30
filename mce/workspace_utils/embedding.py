@@ -8,12 +8,15 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-EMBEDDING_MODEL = "text-embedding-3-small"  # Cannot be changed
+EMBEDDING_MODEL = os.getenv("MCE_EMBEDDING_MODEL", "text-embedding-v4")
 
 embeddings = OpenAIEmbeddings(
     model=EMBEDDING_MODEL,
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    base_url=os.getenv("OPENROUTER_API_BASE"),
+    api_key=os.getenv("DASHSCOPE_API_KEY"),
+    base_url=os.getenv(
+        "DASHSCOPE_API_BASE",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
 )
 
 def compute_embedding_similarity(

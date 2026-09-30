@@ -18,7 +18,7 @@ load_dotenv(override=True)
 logger = logging.getLogger(__name__)
 
 
-def compute_avg_metrics(successful_results: List[Dict[str, Any]]) -> Dict[str, float]:
+def compute_avg_metrics(successful_results: List[Dict[str, Any]], total_count: int = None) -> Dict[str, float]:
     """
     Compute average metrics from successful evaluation results.
     
@@ -43,20 +43,22 @@ def compute_avg_metrics(successful_results: List[Dict[str, Any]]) -> Dict[str, f
         if not values:
             avg_metrics[metric_name] = 0.0
         elif isinstance(values[0], (int, float)):
-            avg_metrics[metric_name] = sum(values) / len(values)
+            # Use total_count (including errors) as denominator to avoid inflated metrics
+            denominator = total_count if total_count is not None else len(values)
+            avg_metrics[metric_name] = sum(values) / denominator
 
     return avg_metrics
 
 
 def init_embeddings(
-    model: str = "text-embedding-3-small",
+    model: str = None,
     **kwargs
 ) -> OpenAIEmbeddings:
     """
     Initialize an embeddings model with API credentials.
     
     Args:
-        model: Model name (default: "text-embedding-3-small")
+        model: Model name (default: "text-embedding-v4")
         **kwargs: Additional arguments to pass to OpenAIEmbeddings
     
     Returns:
@@ -65,11 +67,17 @@ def init_embeddings(
     Raises:
         ValueError: If no API key is found
     """
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENROUTER_API_BASE") or os.getenv("OPENAI_API_BASE")
+    if model is None:
+        model = os.getenv("MCE_EMBEDDING_MODEL", "text-embedding-v4")
+        
+    api_key = os.getenv("DASHSCOPE_API_KEY")
+    base_url = os.getenv(
+        "DASHSCOPE_API_BASE",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
     
     if not api_key:
-        raise ValueError("No API key found. Set OPENROUTER_API_KEY or OPENAI_API_KEY")
+        raise ValueError("No API key found. Set DASHSCOPE_API_KEY")
     
     return OpenAIEmbeddings(
         model=model,

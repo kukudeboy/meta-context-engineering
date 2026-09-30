@@ -416,8 +416,8 @@ async def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="deepseek/deepseek-chat-v3.1",
-        help="LLM model used in context eval (default: deepseek/deepseek-chat-v3.1)"
+        default="qwen3.7-flash",
+        help="LLM model used in context eval (default: qwen3.7-flash)"
     )
     parser.add_argument(
         "--start-iter",

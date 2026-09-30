@@ -1,5 +1,5 @@
 """
-Meta-agent implementation using Claude Agent SDK.
+Meta-agent implementation using the OpenAI-compatible tool-calling agent (mce.agent).
 
 The meta-agent generates and evolves skills for the base-level context learning agent.
 """
@@ -8,13 +8,10 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
-from claude_agent_sdk import query, ClaudeAgentOptions, ClaudeSDKClient
 import os
-import json
-import re
-from functools import partial
 
-from mce.logging_utils import log_message, setup_logger
+from mce.agent import ToolAgent, Sandbox
+from mce.logging_utils import setup_logger
 from mce.prompts.meta_agent import build_meta_agent_prompt
 from mce.utils import cleanup_irrelevant_files
 
@@ -59,79 +56,23 @@ def _verify_meta_agent_outputs(
     }
 
 
-async def _meta_agent_permission_handler(
-    tool_name: str,
-    input_data: dict,
-    context: dict,
-    iter_dir: Path,
-):
+def build_meta_agent_sandbox(iter_dir: Path, workspace_base: Path) -> Sandbox:
     """
-    Permission handler for meta-agent with skill database access.
-    
+    Sandbox for meta-agent with skill database access.
+
     The meta-agent can:
     - Read files anywhere in workspace_base (for skill database inspection)
-    - Write/Edit files ONLY in current iter_dir/.claude/skills/ and INITIAL_PROMPT.md
+    - Write files ONLY in current iter_dir/.claude/skills/
     """
-    workspace_base = iter_dir.parent.resolve()
-    iter_dir = iter_dir.resolve()
+    iter_dir = Path(iter_dir).resolve()
+    return Sandbox(
+        cwd=workspace_base,
+        read_roots=[workspace_base],
+        write_roots=[iter_dir / ".claude" / "skills"],
+    )
 
-    # Define allowed tools
-    allowed_tools = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Task", "TaskOutput", "ExitPlanMode", "TodoWrite", "KillShell", "EnterPlanMode"]
-    
-    # Check if tool is in allowed list
-    if tool_name not in allowed_tools:
-        return {
-            "behavior": "deny",
-            "message": f"Tool '{tool_name}' is not allowed. Allowed tools: {', '.join(allowed_tools)}",
-            "interrupt": False  # Don't interrupt, just deny
-        }
-    
-    # Tools that involve file paths
-    file_tools = ["Read", "Write", "Edit", "Glob", "Grep"]
-    
-    if tool_name in file_tools:
-        # Get the file path from (file_path for write and read; path for glob and grep)
-        file_path = input_data.get("file_path") or input_data.get("path")
-        
-        if file_path:
-            # Resolve the absolute path
-            if not Path(file_path).is_absolute():
-                resolved_path = (workspace_base / file_path).resolve()
-            else:
-                resolved_path = Path(file_path).resolve()
-            
-            # For read operations, allow anywhere in workspace_base
-            if tool_name in ["Read", "Glob", "Grep"]:
-                try:
-                    resolved_path.relative_to(workspace_base)
-                    return {"behavior": "allow", "updatedInput": input_data}
-                except ValueError:
-                    return {
-                        "behavior": "deny",
-                        "message": f"Access denied: Read operations restricted to workspace ({workspace_base})",
-                        "interrupt": True
-                    }
-            
-            # For write/edit operations, only allow in current skill dir
-            if tool_name in ["Write", "Edit"]:
-                skills_dir = iter_dir / ".claude" / "skills"
-                
-                # Allow writing to .claude/skills/ only
-                try:
-                    resolved_path.relative_to(skills_dir)
-                    return {"behavior": "allow", "updatedInput": input_data}
-                except ValueError:
-                    return {
-                        "behavior": "deny",
-                        "message": f"Access denied: Write operations restricted to {skills_dir}",
-                        "interrupt": True
-                    }
 
-    # Allow the operation
-    return {
-        "behavior": "allow",
-        "updatedInput": input_data
-    }
+META_AGENT_TOOLS = ["Read", "Write", "Glob"]
 
 
 async def run_meta_agent(
@@ -173,8 +114,7 @@ async def run_meta_agent(
         minimal_console=True
     )
     
-    # Run meta-agent using Claude Agent SDK
-    allowed_tools = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "Task", "TaskOutput", "ExitPlanMode", "TodoWrite", "KillShell", "EnterPlanMode"]
+    allowed_tools = META_AGENT_TOOLS
     
     # Build prompt based on execution environment
     if e2b_sandbox_manager:
@@ -236,55 +176,46 @@ async def run_meta_agent(
                 'skill_md': None,
             }
     
-    # Original local execution path
-    else:
-        # Original local execution path
-        options = ClaudeAgentOptions(
-            cwd=str(workspace_base),  # Set to workspace base for skill database access
-            allowed_tools=allowed_tools,
-            can_use_tool=partial(
-                _meta_agent_permission_handler, 
-                iter_dir=iter_dir, 
-            )
-        )
+    agent = ToolAgent(
+        sandbox=build_meta_agent_sandbox(iter_dir, workspace_base),
+        tools=META_AGENT_TOOLS,
+        logger=logger,
+        console_prefix=f"  [meta iter{iteration}]",
+    )
 
     # Run agent with validation loop
-    max_validation_attempts = 3
-    
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(meta_prompt)
-        
-        for attempt in range(max_validation_attempts):
-            logger.info(f"\n--- Validation attempt {attempt + 1}/{max_validation_attempts} ---")
-            
-            # Collect agent response
-            message_count = 0
-            async for message in client.receive_response():
-                message_count += 1
-                log_message(message, logger, minimal_console=True)
-            
-            logger.info(f"Meta-agent completed with {message_count} messages")
-            
-            # Verify SKILL.md was generated
-            verification_result = _verify_meta_agent_outputs(iter_dir, logger)
-            
-            if verification_result['success']:
-                # Clean up irrelevant files
-                cleanup_irrelevant_files(iter_dir, agent_type="meta", logger=logger)
-                return verification_result
-            
-            # SKILL.md not generated - provide feedback
-            logger.warning(f"❌ SKILL.md not found at expected location")
-            
-            # Check if we have more attempts
-            if attempt + 1 >= max_validation_attempts:
-                logger.error(f"Max validation attempts ({max_validation_attempts}) exceeded")
-                break
-            
-            # Feed error back to agent
-            skills_dir = iter_dir / ".claude" / "skills" / "learning-context"
-            expected_path = skills_dir / "SKILL.md"
-            feedback = f"""
+    max_validation_attempts = int(os.getenv("MCE_MAX_VALIDATION_ATTEMPTS", "5"))
+    next_prompt = meta_prompt
+
+    for attempt in range(max_validation_attempts):
+        logger.info(f"\n--- Validation attempt {attempt + 1}/{max_validation_attempts} ---")
+
+        agent_result = await agent.query(next_prompt)
+        logger.info(
+            f"Meta-agent completed with {agent_result.message_count} messages, "
+            f"{agent_result.tool_calls} tool calls ({agent_result.stopped_reason})"
+        )
+
+        # Verify SKILL.md was generated
+        verification_result = _verify_meta_agent_outputs(iter_dir, logger)
+
+        if verification_result['success']:
+            # Clean up irrelevant files
+            cleanup_irrelevant_files(iter_dir, agent_type="meta", logger=logger)
+            return verification_result
+
+        # SKILL.md not generated - provide feedback
+        logger.warning(f"❌ SKILL.md not found at expected location")
+
+        # Check if we have more attempts
+        if attempt + 1 >= max_validation_attempts:
+            logger.error(f"Max validation attempts ({max_validation_attempts}) exceeded")
+            break
+
+        # Feed error back to agent
+        skills_dir = iter_dir / ".claude" / "skills" / "learning-context"
+        expected_path = skills_dir / "SKILL.md"
+        next_prompt = f"""
 ⚠️ VALIDATION ERROR
 
 Your SKILL.md file was not found at the expected location:
@@ -299,9 +230,8 @@ Required:
 
 Please create the SKILL.md file now.
 """
-            logger.info(f"📤 Sending validation feedback to meta-agent...")
-            await client.query(feedback)
-    
+        logger.info(f"📤 Sending validation feedback to meta-agent...")
+
     # Validation failed after all attempts
     cleanup_irrelevant_files(iter_dir, agent_type="meta", logger=logger)
     return {

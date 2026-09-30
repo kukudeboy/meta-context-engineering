@@ -20,24 +20,30 @@ class LLMClient:
         model: str,
         temperature: float = 0.0,
         max_retries: int = 3,
-        timeout: float = 120.0,
+        timeout: float = None,
         provider_config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize LLM client.
         
         Args:
-            model: Model name (e.g., "deepseek/deepseek-chat-v3.1")
+            model: Model name (e.g., "qwen3.7-flash")
             temperature: Temperature for sampling
             max_retries: Max retries for parsing failures and timeouts
             timeout: Timeout in seconds for each API call
-            provider_config: OpenRouter provider config (e.g., {"only": ["openai"]})
+            provider_config: Optional provider-specific request configuration
         """
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENROUTER_API_BASE") or os.getenv("OPENAI_API_BASE")
+        if timeout is None:
+            timeout = float(os.getenv("MCE_LLM_TIMEOUT", "120.0"))
+            
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        base_url = os.getenv(
+            "DASHSCOPE_API_BASE",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
         
         if not api_key:
-            raise ValueError("No API key found. Set OPENROUTER_API_KEY or OPENAI_API_KEY")
+            raise ValueError("No API key found. Set DASHSCOPE_API_KEY")
         
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model

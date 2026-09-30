@@ -82,9 +82,11 @@ IMPORTANT: In your interface implementation, use ABSOLUTE paths to access contex
                     "output": context,
                 })
             except Exception as e:
-                logger.warning(f"get_context error: {e}")
+                import traceback
+                tb = traceback.format_exc()
+                logger.error(f"get_context error: {e}\n{tb}")
                 context = ""
-                trajectory.append({"step": "get_context", "error": str(e)})
+                trajectory.append({"step": "get_context", "error": str(e), "traceback": tb})
         else:
             # No interface available (first training round) - use empty context
             context = ""

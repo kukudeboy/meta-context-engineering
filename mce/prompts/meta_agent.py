@@ -156,6 +156,9 @@ Requirements:
 - NO iteration-specific references
 - Mention useful utilities (`utils/llm.py`, `utils/embedding.py`)
 - Include clear methodology and implementation guidance
+- **KEEP IT CONCISE**: SKILL.md MUST be under 800 words. Use bullet-point lists, not paragraphs.
+- **NO long prose**: The base-agent is a small model with limited attention. Short, actionable instructions only.
+- **Structure**: Use numbered steps (1, 2, 3...) for the methodology. Each step should be 1-2 sentences max.
 
 **Before finishing, verify**:
 - SKILL.md exists at `{skill_output_path}`

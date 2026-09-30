@@ -5,6 +5,7 @@ Evaluate learned interfaces on samples with async and concurrent execution.
 import asyncio
 import json
 import sys
+import os
 import logging
 import importlib.util
 from typing import Callable, Dict, List, Any, Optional
@@ -21,7 +22,7 @@ load_dotenv(override=True)
 
 logger = logging.getLogger(__name__)
 
-MAX_CONCURRENCY = 30
+MAX_CONCURRENCY = int(os.getenv("MCE_MAX_CONCURRENCY", "10"))
 
 
 def load_interfaces(iter_dir: Path, signatures: List[InterfaceSignature]) -> Dict[str, Callable]:
@@ -137,7 +138,7 @@ async def batch_evaluate(
     successful = [r for r in results if "error" not in r]
     
     # Compute average metrics
-    avg_metrics = compute_avg_metrics(successful)
+    avg_metrics = compute_avg_metrics(successful, total_count=len(results))
     
     primary_metric_name = environment.get_primary_metric_name()
     primary_metric_value = avg_metrics.get(primary_metric_name, 0.0)
@@ -199,7 +200,7 @@ async def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="deepseek/deepseek-chat-v3.1",
+        default="qwen3.7-flash",
         help="LLM model to use"
     )
     parser.add_argument(

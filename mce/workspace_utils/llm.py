@@ -11,13 +11,16 @@ load_dotenv(override=True)
 
 T = TypeVar('T', bound=BaseModel)
 
-MAX_CONCURRENCY = 50
-MAX_LLM_CALLS = 100
+MAX_CONCURRENCY = int(os.getenv("MCE_MAX_LLM_CONCURRENCY", "50"))
+MAX_LLM_CALLS = int(os.getenv("MCE_MAX_LLM_CALLS", "100"))
 
 llm = ChatOpenAI(
-    model="deepseek/deepseek-chat-v3.1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-    base_url=os.getenv("OPENROUTER_API_BASE"),
+    model=os.getenv("MCE_MODEL", "qwen3.7-flash"),
+    api_key=os.getenv("DASHSCOPE_API_KEY"),
+    base_url=os.getenv(
+        "DASHSCOPE_API_BASE",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
     temperature=0,
 )
 

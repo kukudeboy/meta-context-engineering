@@ -23,7 +23,8 @@ from env.base import (
     EnvironmentResult,
     TaskEnvironment,
 )
-from mce.logging_utils import setup_logger, log_message, MessageFormatter
+from mce.agent import ToolAgent, Sandbox
+from mce.logging_utils import setup_logger
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ DISEASE_LIST = [
 
 
 class SymptomDiagnosisAgentEnvironment(TaskEnvironment):
-    """Fully agentic diagnosis using Claude Agent SDK."""
+    """Fully agentic diagnosis using the OpenAI-compatible tool-calling agent."""
 
     def get_interface_signatures(self) -> List[InterfaceSignature]:
         """No interfaces - agent reads static context files."""
@@ -71,15 +72,12 @@ NO interface signatures - curate high-quality context files in context/ for the 
         Args:
             sample: Input sample
             interfaces: Not used (agent environment has no interfaces)
-            llm_client: Not used (agent runs via SDK)
+            llm_client: Not used (agent calls the model via mce.agent)
             context_dir: Path to context/ folder for agent to explore
             log_dir: Path to log directory for storing agent trajectories
         """
         trajectory = []
         conversation_messages = []  # Store full conversation for logging
-        
-        # Import here to avoid circular imports
-        from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 
         # Check context directory exists
         if not context_dir or not context_dir.exists():
@@ -115,12 +113,14 @@ NO interface signatures - curate high-quality context files in context/ for the 
             })
             trajectory.extend(agent_trajectory)
         except Exception as e:
-            logger.error(f"Agent error: {e}")
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"Agent error: {e}\n{tb}")
             return EnvironmentResult(
                 feedback=f"Agent error: {e}",
                 ground_truth=sample.ground_truth,
                 metrics={"accuracy": 0.0},
-                trajectory=trajectory + [{"step": "agent_error", "error": str(e)}]
+                trajectory=trajectory + [{"step": "agent_error", "error": str(e), "traceback": tb}]
             )
         
         # Evaluate
@@ -148,7 +148,7 @@ NO interface signatures - curate high-quality context files in context/ for the 
 
 You are in: `{context_dir}`
 
-This directory contains context files with medical knowledge. Use Read, Glob, or other tools to explore and find relevant information for diagnosis.
+This directory contains context files with medical knowledge. Use the Glob and Read tools to explore and find relevant information for diagnosis.
 """
         
         return f"""You are a medical diagnosis agent. Analyze the patient's symptoms and provide a diagnosis.
@@ -183,19 +183,15 @@ Begin your analysis."""
         sample_id: int,
         log_dir: Optional[Path] = None
     ) -> tuple[str, List[Dict]]:
-        """Run Claude agent with context directory as working directory.
+        """Run tool-calling agent with context directory as working directory.
         
         Returns:
             tuple: (diagnosis, agent_trajectory)
         """
-        from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
-        
         agent_trajectory = []
-        full_response = ""
         
         # Setup logger for this agent run if log_dir provided
         agent_logger = None
-        file_formatter = None
         if log_dir:
             eval_log_dir = log_dir / "eval"
             eval_log_dir.mkdir(parents=True, exist_ok=True)
@@ -205,37 +201,40 @@ Begin your analysis."""
                 console_colors=False,
                 minimal_console=True  # Suppress console output
             )
-            file_formatter = MessageFormatter(use_colors=False, minimal=False)
             agent_logger.info(f"=== Agent Evaluation: Sample {sample_id} ===")
+        else:
+            agent_logger = logging.getLogger(f"agent_eval_sample_{sample_id}")
+            agent_logger.addHandler(logging.NullHandler())
+            agent_logger.propagate = False
         
         # Print simple console message
         print(f"[Agent] Running diagnosis for sample {sample_id}...", end="", flush=True)
         
-        # Set working directory to context folder
-        options = ClaudeAgentOptions(
-            max_turns=10,
-            cwd=str(working_dir) if working_dir else None,
-        )
+        # Read-only access to the context folder
+        if working_dir:
+            sandbox = Sandbox(cwd=working_dir, read_roots=[working_dir])
+            tools = ["Read", "Glob"]
+        else:
+            sandbox = Sandbox(cwd=Path.cwd(), read_roots=[])
+            tools = []
         
-        async with ClaudeSDKClient(options=options) as client:
-            await client.query(prompt)
-            
-            async for message in client.receive_response():
-                # Log message to file only (no console output)
-                if agent_logger and file_formatter:
-                    # Manually log to file without console output
-                    formatted = file_formatter.format_message(message)
-                    agent_logger.info(formatted)
-                
-                # Extract text for diagnosis
-                if hasattr(message, 'content'):
-                    for block in message.content:
-                        if hasattr(block, 'text'):
-                            full_response += block.text
-                            agent_trajectory.append({
-                                "step": "agent_message",
-                                "text": block.text[:500],
-                            })
+        agent = ToolAgent(
+            sandbox=sandbox,
+            tools=tools,
+            logger=agent_logger,
+            max_turns=10,
+        )
+        result = await agent.query(prompt)
+        if "[DIAGNOSIS]" not in "\n".join(result.texts).upper():
+            result.texts.append(await agent.answer_without_tools(
+                "Stop exploring. Give your final diagnosis now in the format [DIAGNOSIS]disease_name[/DIAGNOSIS]."
+            ))
+        for text in result.texts:
+            agent_trajectory.append({
+                "step": "agent_message",
+                "text": text[:500],
+            })
+        full_response = "\n".join(result.texts)
         
         # Extract diagnosis from response
         diagnosis = self._extract_diagnosis(full_response)
