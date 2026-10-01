@@ -28,7 +28,7 @@ from mce.llm_client import LLMClient
 from env.registry import EnvironmentRegistry
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 
 async def run_iteration(
@@ -416,8 +416,8 @@ async def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="qwen3.7-flash",
-        help="LLM model used in context eval (default: qwen3.7-flash)"
+        default=os.getenv("MCE_MODEL", "qwen3.7-flash"),
+        help="LLM model used in context eval (default: MCE_MODEL, or qwen3.7-flash)"
     )
     parser.add_argument(
         "--start-iter",
@@ -592,4 +592,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

@@ -17,7 +17,7 @@ from mce.utils import cleanup_irrelevant_files
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 
 def _verify_meta_agent_outputs(

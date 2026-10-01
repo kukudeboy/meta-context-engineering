@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional
 from openai import AsyncOpenAI, APIStatusError, BadRequestError
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +356,7 @@ class ToolAgent:
             timeout=self.timeout,
             max_retries=0,
         )
+        self.logger.info("Agent model=%s endpoint=%s", self.model, self.client.base_url)
         self.executor = ToolExecutor(
             sandbox,
             max_output_chars=max_tool_output_chars or _env_int("MCE_AGENT_MAX_TOOL_OUTPUT", 12000),
@@ -491,7 +492,9 @@ class ToolAgent:
                 last_error = e
                 self.logger.warning(f"Model call failed (attempt {attempt + 1}/4): {type(e).__name__}: {e}")
                 await asyncio.sleep(5 * (attempt + 1))
-        raise RuntimeError(f"Model call failed after retries: {last_error}")
+        raise RuntimeError(
+            f"Model call failed after retries (model={self.model}, endpoint={self.client.base_url}): {last_error}"
+        ) from last_error
 
     # -- tool call parsing --------------------------------------------------
 

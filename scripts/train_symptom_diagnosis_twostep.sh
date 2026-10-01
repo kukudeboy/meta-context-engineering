@@ -5,7 +5,6 @@ uv run python -m mce.main \
     --env "symptom_diagnosis_twostep" \
     --train-data "env/symptom_diagnosis/data/train.jsonl" \
     --val-data "env/symptom_diagnosis/data/val.jsonl" \
-    --model "${MCE_MODEL:-qwen3.7-flash}" \
     --iterations 3 \
     --train-limit 50 \
     --val-limit 20 \

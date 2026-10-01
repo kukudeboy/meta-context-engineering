@@ -18,7 +18,7 @@ from mce.validation import load_interfaces_from_init
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 
@@ -200,8 +200,8 @@ async def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="qwen3.7-flash",
-        help="LLM model to use"
+        default=os.getenv("MCE_MODEL", "qwen3.7-flash"),
+        help="LLM model to use (default: MCE_MODEL, or qwen3.7-flash)"
     )
     parser.add_argument(
         "--save-results-to",

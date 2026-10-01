@@ -6,17 +6,19 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 EMBEDDING_MODEL = os.getenv("MCE_EMBEDDING_MODEL", "text-embedding-v4")
 
 embeddings = OpenAIEmbeddings(
     model=EMBEDDING_MODEL,
-    api_key=os.getenv("DASHSCOPE_API_KEY"),
-    base_url=os.getenv(
+    api_key=os.getenv("MCE_EMBEDDING_API_KEY") or os.getenv("DASHSCOPE_API_KEY"),
+    base_url=os.getenv("MCE_EMBEDDING_API_BASE") or os.getenv(
         "DASHSCOPE_API_BASE",
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     ),
+    check_embedding_ctx_length=False,
+    model_kwargs={"encoding_format": "float"},
 )
 
 def compute_embedding_similarity(

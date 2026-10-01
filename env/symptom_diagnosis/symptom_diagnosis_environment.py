@@ -11,6 +11,7 @@ import json
 import random
 import re
 import logging
+import asyncio
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -74,7 +75,7 @@ IMPORTANT: In your interface implementation, use ABSOLUTE paths to access contex
         
         if get_context:
             try:
-                context = get_context(sample.question)
+                context = await asyncio.to_thread(get_context, sample.question)
                 print(f"[Context] Retrieved {len(context)} chars", flush=True)
                 trajectory.append({
                     "step": "get_context",

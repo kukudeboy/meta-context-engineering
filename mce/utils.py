@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any, List
 from langchain_openai import OpenAIEmbeddings
 
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +70,18 @@ def init_embeddings(
     if model is None:
         model = os.getenv("MCE_EMBEDDING_MODEL", "text-embedding-v4")
         
-    api_key = os.getenv("DASHSCOPE_API_KEY")
-    base_url = os.getenv(
+    api_key = os.getenv("MCE_EMBEDDING_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+    base_url = os.getenv("MCE_EMBEDDING_API_BASE") or os.getenv(
         "DASHSCOPE_API_BASE",
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
     
     if not api_key:
-        raise ValueError("No API key found. Set DASHSCOPE_API_KEY")
+        raise ValueError("No API key found. Set MCE_EMBEDDING_API_KEY or DASHSCOPE_API_KEY")
+
+    kwargs.setdefault("check_embedding_ctx_length", False)
+    kwargs.setdefault("model_kwargs", {})
+    kwargs["model_kwargs"] = {"encoding_format": "float", **kwargs["model_kwargs"]}
     
     return OpenAIEmbeddings(
         model=model,
@@ -382,7 +386,7 @@ def setup_base_agent_workspace(
         logger.info(f"✅ Created empty interfaces/ folder")
     
     # Copy workspace_utils to utils/
-    project_root = workspace_base.parent.parent
+    project_root = Path(__file__).resolve().parent.parent
     source_utils = project_root / "mce" / "workspace_utils"
     target_utils = iter_folder / "utils"
     if source_utils.exists() and not target_utils.exists():

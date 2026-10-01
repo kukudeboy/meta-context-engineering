@@ -13,6 +13,7 @@ import json
 import random
 import re
 import logging
+import asyncio
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -88,7 +89,7 @@ IMPORTANT: In your interface implementation, use ABSOLUTE paths to access contex
         # === Step 1: Narrow down candidates ===
         if get_narrowing_ctx:
             try:
-                narrowing_context = get_narrowing_ctx(sample.question)
+                narrowing_context = await asyncio.to_thread(get_narrowing_ctx, sample.question)
                 print(f"[Context] Stage1: {len(narrowing_context)} chars", flush=True)
                 trajectory.append({
                     "step": "get_narrowing_context",
@@ -129,7 +130,7 @@ IMPORTANT: In your interface implementation, use ABSOLUTE paths to access contex
         candidates_str = ", ".join(candidates)
         if get_diagnosis_ctx:
             try:
-                diagnosis_context = get_diagnosis_ctx(sample.question, candidates_str)
+                diagnosis_context = await asyncio.to_thread(get_diagnosis_ctx, sample.question, candidates_str)
                 print(f"[Context] Stage2: {len(diagnosis_context)} chars", flush=True)
                 trajectory.append({
                     "step": "get_diagnosis_context",

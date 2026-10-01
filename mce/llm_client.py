@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, Callable, List, Union
 from httpx._transports import default
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,8 @@ class LLMClient:
         self.temperature = temperature
         self.max_retries = max_retries
         self.timeout = timeout
+        self.max_tokens = int(os.getenv("MCE_LLM_MAX_TOKENS", "1024"))
+        logger.info("Inference model=%s endpoint=%s", self.model, base_url)
         
         
         # if provider_config:
@@ -89,6 +91,7 @@ class LLMClient:
                         model=self.model,
                         messages=messages,
                         temperature=self.temperature,
+                        max_tokens=self.max_tokens,
                         extra_body=extra_body if extra_body else None,
                     ),
                     timeout=self.timeout
@@ -117,4 +120,3 @@ class LLMClient:
                 raise
         
         raise RuntimeError("Should not reach here")
-

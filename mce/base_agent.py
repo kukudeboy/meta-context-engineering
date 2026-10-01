@@ -25,7 +25,7 @@ from mce.validation import validate_interfaces, format_validation_feedback, Vali
 from env.base import InterfaceSignature
 
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 
 def build_base_agent_sandbox(iter_dir: Path) -> Sandbox:
