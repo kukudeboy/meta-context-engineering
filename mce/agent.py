@@ -29,6 +29,7 @@ import asyncio
 import fnmatch
 import logging
 import subprocess
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -123,6 +124,31 @@ TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {
             "properties": {
                 "pattern": {"type": "string", "description": "Glob pattern, e.g. '*.py' or '**/*.md'"},
                 "path": {"type": "string", "description": "Directory to search in. Default: working directory"},
+            },
+            "required": ["pattern"],
+        },
+    },
+    "Edit": {
+        "description": "Replace text in a file inside the sandbox. Read the file first and provide an exact old_string.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Absolute path, or path relative to the working directory"},
+                "old_string": {"type": "string", "description": "Exact text to replace"},
+                "new_string": {"type": "string", "description": "Replacement text"},
+                "replace_all": {"type": "boolean", "description": "Replace every occurrence; default false"},
+            },
+            "required": ["file_path", "old_string", "new_string"],
+        },
+    },
+    "Grep": {
+        "description": "Search text in files inside the sandbox and return matching file, line, and content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Plain text or regular expression"},
+                "path": {"type": "string", "description": "File or directory to search; defaults to working directory"},
+                "include": {"type": "string", "description": "Optional glob filter such as '*.py'"},
             },
             "required": ["pattern"],
         },
@@ -249,6 +275,64 @@ class ToolExecutor:
         if len(matches) > 200:
             shown.append(f"... and {len(matches) - 200} more")
         return "\n".join(shown), False
+
+    def _tool_edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        **_,
+    ):
+        path = self.sandbox.resolve(file_path)
+        denied = self.sandbox.check_write(path)
+        if denied:
+            return denied, True
+        if not path.exists() or not path.is_file():
+            return f"Error: file not found: {path}", True
+        if not old_string:
+            return "Error: old_string must not be empty", True
+        content = path.read_text(encoding="utf-8", errors="replace")
+        count = content.count(old_string)
+        if count == 0:
+            return "Error: old_string was not found in the file", True
+        if count > 1 and not replace_all:
+            return f"Error: old_string occurs {count} times; provide a larger unique string or set replace_all=true", True
+        updated = content.replace(old_string, new_string, -1 if replace_all else 1)
+        path.write_text(updated, encoding="utf-8")
+        if path.suffix == ".py":
+            try:
+                ast.parse(updated)
+            except SyntaxError as e:
+                return f"Edited {path}, but Python syntax is invalid at line {e.lineno}: {e.msg}", True
+        return f"Edited {path} ({count if replace_all else 1} replacement(s))", False
+
+    def _tool_grep(self, pattern: str, path: str = None, include: str = None, **_):
+        base = self.sandbox.resolve(path) if path else self.sandbox.cwd
+        denied = self.sandbox.check_read(base)
+        if denied:
+            return denied, True
+        if not base.exists():
+            return f"Error: path not found: {base}", True
+        files = [base] if base.is_file() else list(base.rglob(include or "*"))
+        try:
+            matcher = re.compile(pattern)
+        except re.error as e:
+            return f"Error: invalid regular expression: {e}", True
+        matches = []
+        for file_path in sorted(p for p in files if p.is_file()):
+            if self.sandbox.check_read(file_path.resolve()):
+                continue
+            try:
+                lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            for line_no, line in enumerate(lines, start=1):
+                if matcher.search(line):
+                    matches.append(f"{file_path}:{line_no}:{line}")
+                    if len(matches) >= 200:
+                        return "\n".join(matches), False
+        return ("\n".join(matches) if matches else f"No matches for {pattern!r}"), False
 
     def _tool_bash(self, command: str, timeout: int = 120, **_):
         timeout = min(max(int(timeout or 120), 1), 600)

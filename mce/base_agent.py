@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from mce.agent import ToolAgent, Sandbox
+from mce.config import agent_tools, force_write_only, validation_attempts
 from mce.logging_utils import setup_logger
 from mce.prompts.base_agent import build_base_agent_prompt
 from mce.utils import cleanup_irrelevant_files
@@ -41,10 +42,7 @@ def build_base_agent_sandbox(iter_dir: Path) -> Sandbox:
 
 def get_base_agent_tools() -> List[str]:
     """Tools exposed to the base-agent. Bash can be disabled via MCE_AGENT_ENABLE_BASH=0."""
-    tools = ["Read", "Write", "Glob"]
-    if os.getenv("MCE_AGENT_ENABLE_BASH", "1").lower() not in ("0", "false", "no"):
-        tools.append("Bash")
-    return tools
+    return agent_tools("base")
 
 
 async def run_base_agent(
@@ -84,7 +82,7 @@ async def run_base_agent(
         sub_iteration = int(iter_dir_name.split("_sub")[1])
 
     if max_validation_attempts is None:
-        max_validation_attempts = int(os.getenv("MCE_MAX_VALIDATION_ATTEMPTS", "5"))
+        max_validation_attempts = validation_attempts()
 
     # Set up iteration-specific logger
     if run_dir and iteration is not None:
@@ -114,6 +112,8 @@ async def run_base_agent(
         iter_dir=str(iter_dir),
         workspace_base=str(workspace_base),
         initial_prompt=initial_prompt,
+        behavior_profile=os.getenv("MCE_BEHAVIOR_PROFILE", "cluster_safe"),
+        write_only=force_write_only(),
     )
     
     logger.info("\n" + "="*80)

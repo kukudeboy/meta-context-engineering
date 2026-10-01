@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any
 import os
 
 from mce.agent import ToolAgent, Sandbox
+from mce.config import agent_tools, validation_attempts
 from mce.logging_utils import setup_logger
 from mce.prompts.meta_agent import build_meta_agent_prompt
 from mce.utils import cleanup_irrelevant_files
@@ -72,7 +73,7 @@ def build_meta_agent_sandbox(iter_dir: Path, workspace_base: Path) -> Sandbox:
     )
 
 
-META_AGENT_TOOLS = ["Read", "Write", "Glob"]
+META_AGENT_TOOLS = agent_tools("meta")
 
 
 async def run_meta_agent(
@@ -132,6 +133,7 @@ async def run_meta_agent(
             interface_signatures=interface_signatures,
             iter_dir=str(iter_dir),
             workspace_base=str(workspace_base),
+            behavior_profile=os.getenv("MCE_BEHAVIOR_PROFILE", "cluster_safe"),
         )
     
     # Log the prompt
@@ -184,7 +186,7 @@ async def run_meta_agent(
     )
 
     # Run agent with validation loop
-    max_validation_attempts = int(os.getenv("MCE_MAX_VALIDATION_ATTEMPTS", "5"))
+    max_validation_attempts = validation_attempts()
     next_prompt = meta_prompt
 
     for attempt in range(max_validation_attempts):

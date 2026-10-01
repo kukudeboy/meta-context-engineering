@@ -14,6 +14,7 @@ from env.registry import EnvironmentRegistry
 from pathlib import Path
 from mce.llm_client import LLMClient
 from mce.utils import compute_avg_metrics
+from mce.config import include_errors_in_metrics
 from mce.validation import load_interfaces_from_init
 
 from dotenv import load_dotenv
@@ -138,7 +139,8 @@ async def batch_evaluate(
     successful = [r for r in results if "error" not in r]
     
     # Compute average metrics
-    avg_metrics = compute_avg_metrics(successful, total_count=len(results))
+    denominator = len(results) if include_errors_in_metrics() else None
+    avg_metrics = compute_avg_metrics(successful, total_count=denominator)
     
     primary_metric_name = environment.get_primary_metric_name()
     primary_metric_value = avg_metrics.get(primary_metric_name, 0.0)

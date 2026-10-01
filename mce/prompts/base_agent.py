@@ -16,6 +16,8 @@ def build_base_agent_prompt(
     iter_dir: str,
     workspace_base: str = None,
     initial_prompt: str = None,
+    behavior_profile: str = None,
+    write_only: bool = None,
 ) -> str:
     """
     Build the base agent prompt with interface signatures.
@@ -176,7 +178,10 @@ If validation fails, you'll receive specific error messages to fix.
 Just keep working until all interfaces are valid.
 '''
     
-    prompt += '''## Tool Usage Guidelines
+    if write_only is None:
+        write_only = (behavior_profile or "cluster_safe").strip().lower() not in {"paper", "paper_compatible", "original"}
+    if write_only:
+        prompt += '''## Tool Usage Guidelines
 
 **IMPORTANT**: When creating or modifying files:
 - **ALWAYS use the `Write` tool** to create complete files. Do NOT use the `Edit` tool.

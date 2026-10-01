@@ -100,3 +100,19 @@ bash -n scripts/run_cluster_smoke.sh
 本次本地验证结果：13 个修改或新增的 Python 文件通过 `py_compile`；
 4 个 Shell 脚本通过 `bash -n`；11 项回归检查全部通过；
 离线启动脚本使用测试解释器时能正确进入 CLI 帮助；`git diff --check` 通过。
+
+## 行为兼容模式
+
+默认 `MCE_BEHAVIOR_PROFILE=cluster_safe`，适合 Llama 3.1 8B 集群运行：限制工具集合、要求完整 Write、最多 5 次接口校验、启用诊断最终回答回退，并将执行错误计入总体指标。
+
+如需尽量接近原版 MCE 的 Agent 行为，在不改变本地 OpenAI/vLLM 协议的前提下设置：
+
+```dotenv
+MCE_BEHAVIOR_PROFILE=paper_compatible
+MCE_MAX_VALIDATION_ATTEMPTS=3
+MCE_AGENT_FINAL_FALLBACK=0
+MCE_FORCE_WRITE_ONLY=0
+MCE_METRICS_INCLUDE_ERRORS=0
+```
+
+该模式会开放 `Edit`、`Grep` 和 `Bash` 给 Meta/Base-Agent，移除集群模式的 Write-only 与短技能提示约束，并使用 success-only 指标分母。它仍然使用本地 `ToolAgent`，不需要 Claude SDK 或协议网关。建议将 `MCE_BEHAVIOR_PROFILE`、四个显式开关与实验配置一起记录到运行 manifest；不要在同一组对照实验中混用两个 profile。

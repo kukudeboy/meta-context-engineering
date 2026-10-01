@@ -18,6 +18,7 @@ def build_meta_agent_prompt(
     interface_signatures: List[InterfaceSignature],
     iter_dir: str,
     workspace_base: str,
+    behavior_profile: str = None,
 ) -> str:
     """
     Build the meta agent prompt.
@@ -40,7 +41,7 @@ def build_meta_agent_prompt(
     
     skill_output_path = f"{workspace_base}/{iter_name}/.claude/skills/learning-context/SKILL.md"
     
-    return f"""# Meta-Level Agent: Skill Evolution for Context Engineering
+    prompt = f"""# Meta-Level Agent: Skill Evolution for Context Engineering
 
 ## Task Overview
 
@@ -156,9 +157,6 @@ Requirements:
 - NO iteration-specific references
 - Mention useful utilities (`utils/llm.py`, `utils/embedding.py`)
 - Include clear methodology and implementation guidance
-- **KEEP IT CONCISE**: SKILL.md MUST be under 800 words. Use bullet-point lists, not paragraphs.
-- **NO long prose**: The base-agent is a small model with limited attention. Short, actionable instructions only.
-- **Structure**: Use numbered steps (1, 2, 3...) for the methodology. Each step should be 1-2 sentences max.
 
 **Before finishing, verify**:
 - SKILL.md exists at `{skill_output_path}`
@@ -166,6 +164,12 @@ Requirements:
 
 Begin by analyzing the skill database and evolving the next generation skill.
 """
+    if (behavior_profile or "cluster_safe").strip().lower() not in {"paper", "paper_compatible", "original"}:
+        prompt = prompt.replace(
+            "- Include clear methodology and implementation guidance\n",
+            "- Include clear methodology and implementation guidance\n- **KEEP IT CONCISE**: SKILL.md MUST be under 800 words. Use bullet-point lists, not paragraphs.\n- **NO long prose**: The base-agent is a small model with limited attention. Short, actionable instructions only.\n- **Structure**: Use numbered steps (1, 2, 3...) for the methodology. Each step should be 1-2 sentences max.\n",
+        )
+    return prompt
 
 
 def _build_interface_section(signatures: List[InterfaceSignature]) -> str:

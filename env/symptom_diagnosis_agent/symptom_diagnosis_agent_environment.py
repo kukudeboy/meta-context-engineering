@@ -14,6 +14,7 @@ import random
 import re
 import logging
 import asyncio
+from mce.config import agent_tools, final_answer_fallback_enabled, is_paper_compatible
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -210,10 +211,12 @@ Begin your analysis."""
         # Print simple console message
         print(f"[Agent] Running diagnosis for sample {sample_id}...", end="", flush=True)
         
-        # Read-only access to the context folder
+        # Keep the cluster profile read-only; paper-compatible mode restores the
+        # broader filesystem tool surface used by the original Claude agent.
         if working_dir:
-            sandbox = Sandbox(cwd=working_dir, read_roots=[working_dir])
-            tools = ["Read", "Glob"]
+            write_roots = [working_dir] if is_paper_compatible() else []
+            sandbox = Sandbox(cwd=working_dir, read_roots=[working_dir], write_roots=write_roots)
+            tools = agent_tools("eval")
         else:
             sandbox = Sandbox(cwd=Path.cwd(), read_roots=[])
             tools = []
@@ -225,7 +228,7 @@ Begin your analysis."""
             max_turns=10,
         )
         result = await agent.query(prompt)
-        if "[DIAGNOSIS]" not in "\n".join(result.texts).upper():
+        if final_answer_fallback_enabled() and "[DIAGNOSIS]" not in "\n".join(result.texts).upper():
             result.texts.append(await agent.answer_without_tools(
                 "Stop exploring. Give your final diagnosis now in the format [DIAGNOSIS]disease_name[/DIAGNOSIS]."
             ))
