@@ -14,7 +14,7 @@ from env.registry import EnvironmentRegistry
 from pathlib import Path
 from mce.llm_client import LLMClient
 from mce.utils import compute_avg_metrics
-from mce.config import include_errors_in_metrics
+from mce.config import behavior_profile, include_errors_in_metrics
 from mce.validation import load_interfaces_from_init
 
 from dotenv import load_dotenv
@@ -139,8 +139,10 @@ async def batch_evaluate(
     successful = [r for r in results if "error" not in r]
     
     # Compute average metrics
-    denominator = len(results) if include_errors_in_metrics() else None
-    avg_metrics = compute_avg_metrics(successful, total_count=denominator)
+    metrics_all_samples = compute_avg_metrics(successful, total_count=len(results))
+    metrics_success_only = compute_avg_metrics(successful)
+    include_errors = include_errors_in_metrics()
+    avg_metrics = metrics_all_samples if include_errors else metrics_success_only
     
     primary_metric_name = environment.get_primary_metric_name()
     primary_metric_value = avg_metrics.get(primary_metric_name, 0.0)
@@ -148,6 +150,11 @@ async def batch_evaluate(
     log_data = {
         "summary": {
             "metrics": avg_metrics,
+            "metrics_all_samples": metrics_all_samples,
+            "metrics_success_only": metrics_success_only,
+            "execution_error_rate": len(eval_errors) / len(results) if results else 0.0,
+            "metric_denominator": "all_samples" if include_errors else "success_only",
+            "behavior_profile": behavior_profile(),
             "primary_metric": primary_metric_name,
             "primary_metric_value": primary_metric_value,
             "total": len(results),

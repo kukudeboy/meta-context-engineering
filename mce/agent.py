@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI, APIStatusError, BadRequestError
 from dotenv import load_dotenv
+from mce.config import force_write_only
 
 load_dotenv(override=False)
 
@@ -196,7 +197,7 @@ class ToolExecutor:
         handler = getattr(self, f"_tool_{name.lower()}", None)
         if handler is None:
             return f"Error: unknown tool '{name}'", True
-        if name != "Glob":
+        if name not in {"Glob", "Grep"}:
             args = {_ARG_ALIASES.get(k, k): v for k, v in args.items()}
         try:
             output, is_error = handler(**args)
@@ -286,6 +287,9 @@ class ToolExecutor:
     ):
         path = self.sandbox.resolve(file_path)
         denied = self.sandbox.check_write(path)
+        if denied:
+            return denied, True
+        denied = self.sandbox.check_read(path)
         if denied:
             return denied, True
         if not path.exists() or not path.is_file():
@@ -451,6 +455,11 @@ class ToolAgent:
         ]
 
         prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        if system_prompt is None and not force_write_only():
+            prompt = prompt.replace(
+                "- To create or change a file, call Write with the COMPLETE file content.",
+                "- Create files with Write; modify files with Write or Edit when available.",
+            )
         self.messages: List[Dict[str, Any]] = [
             {"role": "system", "content": prompt.format(cwd=sandbox.cwd)}
         ]

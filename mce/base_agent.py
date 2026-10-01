@@ -100,6 +100,9 @@ async def run_base_agent(
     logger.info(f"\n🤖 BASE-AGENT: Learning context")
     logger.info(f"  Iteration directory: {iter_dir}")
     logger.info(f"  Required interfaces: {[s.name for s in interface_signatures]}")
+    logger.info("  Behavior profile: %s; validation attempts: %s; tools: %s",
+                os.getenv("MCE_BEHAVIOR_PROFILE", "cluster_safe"),
+                max_validation_attempts, get_base_agent_tools())
     
     if workspace_base is None:
         workspace_base = iter_dir.parent

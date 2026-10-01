@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from env.base import InterfaceSignature
+from mce.config import force_write_only
 
 
 @dataclass
@@ -299,6 +300,18 @@ def format_validation_feedback(result: ValidationResult) -> str:
     
     for error in result.errors:
         lines.append(f"- {error}")
+
+    if not force_write_only():
+        lines.extend([
+            "",
+            "Remember:",
+            "- Each interface must be in `interfaces/{name}.py`",
+            "- Function name must match exactly",
+            "- Parameter names must match the signature",
+            "- Function must have a return statement",
+            "- Export functions in `interfaces/__init__.py`",
+        ])
+        return "\n".join(lines)
     
     lines.extend([
         "",

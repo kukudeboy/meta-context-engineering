@@ -188,9 +188,8 @@ Just keep working until all interfaces are valid.
 - Write the ENTIRE file content at once - do not try to do partial string-match edits.
 - If you need to modify an existing file, read it first, then Write the complete updated version.
 - For `Bash` tool: use simple commands only (cat, echo, ls, grep). Avoid complex pipelines.
-
-Work efficiently: focus on impactful changes, avoid over-analysis, finish promptly.
 '''
+    prompt += '\nWork efficiently: focus on impactful changes, avoid over-analysis, finish promptly.\n'
     
     if initial_prompt:
         prompt += f"\n\n## Additional Instructions\n\n{initial_prompt}"

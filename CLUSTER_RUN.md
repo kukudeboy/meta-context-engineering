@@ -116,3 +116,23 @@ MCE_METRICS_INCLUDE_ERRORS=0
 ```
 
 该模式会开放 `Edit`、`Grep` 和 `Bash` 给 Meta/Base-Agent，移除集群模式的 Write-only 与短技能提示约束，并使用 success-only 指标分母。它仍然使用本地 `ToolAgent`，不需要 Claude SDK 或协议网关。建议将 `MCE_BEHAVIOR_PROFILE`、四个显式开关与实验配置一起记录到运行 manifest；不要在同一组对照实验中混用两个 profile。
+
+也可使用专用启动脚本，一次选择上述默认值；显式导出的环境变量仍可覆盖开关：
+
+```bash
+nohup bash scripts/run_paper_compatible.sh > mce_paper_smoke.log 2>&1 &
+```
+
+新评估结果同时保存 `metrics_all_samples`、`metrics_success_only` 和
+`execution_error_rate`，`metrics` 仍按选定配置提供主结果。模型调用或上下文
+函数内部已经被环境捕获的错误，其原有评分逻辑保留；success-only 分母仅排除
+`batch_evaluate` 捕获的执行异常，与上游口径一致。
+
+这是对公开仓库行为的近似兼容，不是 Claude Code 运行时的完整复刻：仍保留
+本地上下文裁剪、单工具调用、SKILL 内容注入和运行冒烟校验；不实现
+Claude 控制类工具及子 Agent。诊断评估保持知识目录只读，paper 模式仅增加
+`Grep`，避免并发样本之间修改共同知识而污染测试。Meta/Base 的 Bash
+仍只是设置工作目录，并非操作系统级路径沙箱；Read/Write/Edit/Grep 则
+执行显式路径检查。生成代码调用 Bash 时不能假设工作目录等于权限隔离。
+
+回溯点：`pre-paper-compatible-20261002`（提交 `4687fc8`）。

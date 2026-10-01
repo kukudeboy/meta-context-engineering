@@ -73,7 +73,7 @@ def build_meta_agent_sandbox(iter_dir: Path, workspace_base: Path) -> Sandbox:
     )
 
 
-META_AGENT_TOOLS = agent_tools("meta")
+META_AGENT_TOOLS = ["Read", "Write", "Glob"]
 
 
 async def run_meta_agent(
@@ -115,7 +115,10 @@ async def run_meta_agent(
         minimal_console=True
     )
     
-    allowed_tools = META_AGENT_TOOLS
+    allowed_tools = agent_tools("meta")
+    logger.info("Behavior profile: %s; validation attempts: %s; tools: %s",
+                os.getenv("MCE_BEHAVIOR_PROFILE", "cluster_safe"),
+                validation_attempts(), allowed_tools)
     
     # Build prompt based on execution environment
     if e2b_sandbox_manager:
@@ -180,7 +183,7 @@ async def run_meta_agent(
     
     agent = ToolAgent(
         sandbox=build_meta_agent_sandbox(iter_dir, workspace_base),
-        tools=META_AGENT_TOOLS,
+        tools=allowed_tools,
         logger=logger,
         console_prefix=f"  [meta iter{iteration}]",
     )
